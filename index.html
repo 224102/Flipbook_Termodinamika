@@ -2,25 +2,166 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-width=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Buku Ajar Termodinamika: Revolusi Energi</title>
     
     <link href="https://unpkg.com/dflip/css/dflip.min.css" rel="stylesheet" type="text/css">
     <link href="https://unpkg.com/dflip/css/themify-icons.min.css" rel="stylesheet" type="text/css">
     
     <style>
-        body, html { margin: 0; padding: 0; height: 100%; background-color: #f5f5f5; }
-        .container { height: 100vh; width: 100%; display: flex; justify-content: center; align-items: center; }
+        body, html { margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f2f5; }
+        
+        #flipbook-container { display: none; height: 100vh; width: 100%; }
+
+        /* Gaya Popup Login */
+        .auth-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.8); display: flex; justify-content: center; align-items: center; z-index: 9999; }
+        .auth-box { background: #fff; padding: 30px; border-radius: 12px; width: 360px; text-align: center; }
+        .auth-box input, .auth-box button { width: 100%; padding: 10px; margin: 8px 0; border-radius: 6px; box-sizing: border-box; }
+        .auth-box button { background: #1a73e8; color: white; border: none; font-weight: bold; cursor: pointer; }
+        
+        /* Gaya Tombol Tanya Guru & Panel Chat */
+        #btn-tanya {
+            display: none; position: fixed; bottom: 20px; right: 20px; background: #ff9800; color: #fff;
+            padding: 15px 20px; border-radius: 50px; font-weight: bold; cursor: pointer; z-index: 1000;
+            box-shadow: 0px 4px 10px rgba(0,0,0,0.3); border: none; font-size: 16px;
+        }
+        #panel-diskusi {
+            display: none; position: fixed; bottom: 80px; right: 20px; width: 350px; background: #fff;
+            border-radius: 10px; box-shadow: 0px 5px 20px rgba(0,0,0,0.3); z-index: 1000; padding: 20px; box-sizing: border-box;
+        }
+        #list-pesan { height: 250px; overflow-y: auto; background: #f9f9f9; padding: 10px; border-radius: 6px; margin-bottom: 10px; border: 1px solid #ddd; text-align: left; }
+        .pesan-item { margin-bottom: 15px; font-size: 14px; }
+        .pesan-siswa { color: #1a73e8; font-weight: bold; }
+        .pesan-guru { background: #e6f4ea; padding: 8px; border-radius: 6px; margin-top: 5px; font-style: italic; color: #137333; }
     </style>
 </head>
 <body>
 
-    <div class="container">
-        <div class="_df_book" source="PRODUK_FISIKA_TERMODINAMIKA.pdf" id="buku_fisika"></div>
+    <div id="auth-overlay" class="auth-overlay">
+        <div class="auth-box">
+            <h2>Masuk ke Buku</h2>
+            <p style="font-size: 14px; color: #555; margin-top: -10px;">Silakan tulis namamu untuk mulai membaca</p>
+            <input type="text" id="nama-siswa" placeholder="Masukkan Nama Panggilan Kamu">
+            <button onclick="masukBuku()">Mulai Belajar</button>
+        </div>
+    </div>
+
+    <div id="flipbook-container">
+        <div class="_df_book" source="PRODUK FISIKA _ TERMODINAMIKA REVOLUSI ENERGI.pdf" id="buku_fisika"></div>
+    </div>
+
+    <button id="btn-tanya" onclick="toggleDiskusi()">Tanya Guru 💬</button>
+    <div id="panel-diskusi">
+        <h3 style="margin-top:0; text-align:left;">Ruang Diskusi</h3>
+        <div id="list-pesan">
+            </div>
+        <div style="display: flex; gap: 5px;">
+            <input type="number" id="input-halaman" placeholder="Hal?" style="width: 25%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+            <input type="text" id="input-pesan" placeholder="Ketik pertanyaanmu..." style="width: 75%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+        </div>
+        <button onclick="kirimPesan()" style="width: 100%; padding: 10px; margin-top: 10px; background:#1a73e8; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">Kirim Pertanyaan</button>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
     <script src="https://unpkg.com/dflip/js/dflip.min.js"></script>
+    
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
+    <script>
+        // KONFIGURASI FIREBASE ANDA
+        const firebaseConfig = {
+            apiKey: "AIzaSyDAf2wJInJMWUopYFLzAXlSMVxiGQg047U",
+            authDomain: "flipbookfisika.firebaseapp.com",
+            databaseURL: "https://flipbookfisika-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "flipbookfisika",
+            storageBucket: "flipbookfisika.firebasestorage.app",
+            messagingSenderId: "892830580362",
+            appId: "1:892830580362:web:c60b4ac4c0a2151d37b773",
+            measurementId: "G-PT2ZFW5PCX"
+        };
+
+        // Inisialisasi Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+        let namaSiswa = "";
+
+        // Fungsi Login Sederhana
+        function masukBuku() {
+            const input = document.getElementById('nama-siswa').value.trim();
+            if(input !== "") {
+                namaSiswa = input;
+                document.getElementById('auth-overlay').style.display = 'none';
+                document.getElementById('flipbook-container').style.display = 'block';
+                document.getElementById('btn-tanya').style.display = 'block';
+                
+                // Mulai membaca pesan dari database saat masuk
+                bacaPesan();
+            } else {
+                alert("Masukkan namamu dulu ya!");
+            }
+        }
+
+        // Buka/Tutup Panel Diskusi
+        function toggleDiskusi() {
+            const panel = document.getElementById('panel-diskusi');
+            panel.style.display = panel.style.display === 'none' || panel.style.display === '' ? 'block' : 'none';
+        }
+
+        // Fungsi Mengirim Pesan ke Firebase
+        function kirimPesan() {
+            const pesan = document.getElementById('input-pesan').value;
+            const halaman = document.getElementById('input-halaman').value;
+
+            if(pesan === "" || halaman === "") {
+                alert("Isi halaman dan pertanyaanmu dulu ya!");
+                return;
+            }
+
+            // Push data ke Realtime Database
+            database.ref('diskusi_kelas').push({
+                nama: namaSiswa,
+                halaman: halaman,
+                pertanyaan: pesan,
+                waktu: Date.now(),
+                balasan_guru: "" 
+            });
+
+            // Kosongkan form setelah kirim
+            document.getElementById('input-pesan').value = "";
+        }
+
+        // Fungsi Membaca Pesan dari Firebase (Real-time)
+        function bacaPesan() {
+            const listPesan = document.getElementById('list-pesan');
+            
+            // Mendengarkan perubahan data di folder 'diskusi_kelas'
+            database.ref('diskusi_kelas').on('value', function(snapshot) {
+                listPesan.innerHTML = ""; // Bersihkan list sebelum memuat ulang
+                
+                snapshot.forEach(function(childSnapshot) {
+                    const data = childSnapshot.val();
+                    
+                    let htmlPesan = `
+                        <div class="pesan-item">
+                            <div class="pesan-siswa">${data.nama} (Hal. ${data.halaman}):</div>
+                            <div>${data.pertanyaan}</div>
+                    `;
+
+                    // Jika guru sudah membalas, tampilkan balasannya
+                    if(data.balasan_guru !== "" && data.balasan_guru !== undefined) {
+                        htmlPesan += `<div class="pesan-guru">👩‍🏫 Guru: ${data.balasan_guru}</div>`;
+                    }
+
+                    htmlPesan += `</div>`;
+                    listPesan.innerHTML += htmlPesan;
+                });
+
+                // Auto scroll ke pesan terbawah
+                listPesan.scrollTop = listPesan.scrollHeight;
+            });
+        }
+    </script>
 </body>
 </html>
